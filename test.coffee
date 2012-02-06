@@ -7,10 +7,23 @@ class Test extends Backbone.Model
   test: null
 
 class TestCollection extends Backbone.Collection
-  redisStorage: new RedisStore('test',redisClient)
+  redisStorage: new RedisStore
+    key: 'test'
+    redisClient: redisClient
+    unique: ['test']
   model: Test
 
 testCollection = new TestCollection()
+testCollection.getByUnique 'test', '21',
+  success: (model) ->
+    if model
+      console.log "Got it: "
+      console.dir model
+    else
+      console.log "Couldn't find model"
+  error: (err) ->
+    console.dir err
+###
 testCollection.fetch
   success: ->
     console.log "Loaded #{testCollection.length} records."
@@ -22,7 +35,7 @@ testCollection.fetch
     else
       console.error "Record 1 not found."
 
-    testCollection.create {"test":Math.random()}, 
+    testCollection.create {"test":testCollection.length+20},
       success: (res) ->
         console.log "Created new record: "
         console.dir res.toJSON()
@@ -32,5 +45,5 @@ testCollection.fetch
   error: (e) ->
     console.error e
     process.exit 1
-
+###
 
