@@ -1,6 +1,6 @@
 redisClient = require './redis_client'
 Backbone = require 'backbone'
-RedisStore = require './backbone-redis-store'
+RedisStore = require '../backbone-redis-store'
 RedisStore.infect Backbone
 
 class Test extends Backbone.Model
