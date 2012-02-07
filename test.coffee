@@ -8,7 +8,7 @@ class Test extends Backbone.Model
   uniqueNumber: null
 
 class TestCollection extends Backbone.Collection
-  redisStorage: new RedisStore
+  redisStore: new RedisStore
     key: 'test'
     redisClient: redisClient
     unique: ['username','uniqueNumber']
