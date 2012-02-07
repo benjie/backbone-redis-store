@@ -7,7 +7,6 @@ Inspired by:
   https://github.com/jeromegn/Backbone.localStorage
 ###
 
-_ = require 'underscore'
 EventEmitter = require('events').EventEmitter
 
 ###
