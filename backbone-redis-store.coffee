@@ -28,37 +28,10 @@ class RedisStore extends EventEmitter
   ###
   Override this if you want to change the id generation
 
-  Currently generates an auto-increment field stored under next.@key
+  Currently generates an auto-increment field stored under next|@key
   ###
   generateId: (cb) =>
     @redis.INCR "next|#{@key}", cb
-
-  index: (model, reason) ->
-    prev = model.previousAttributes()
-    prev |= {}
-    for uniqueKey in @unique
-      if reason is 'delete'
-        oldVal = "#{prev[uniqueKey]}".toLowerCase()
-        delete @uniques[uniqueKey][oldVal]
-        @redis.HDEL "#{@uniqueKey}:#{uniqueKey}", oldVal, (err,res) ->
-          if err
-            throw err
-      else
-        oldVal = null
-        if prev[uniqueKey]
-          oldVal = "#{prev[uniqueKey]}".toLowerCase()
-        newVal = "#{model.attributes[uniqueKey]}".toLowerCase()
-        if newVal isnt oldVal
-          if oldVal isnt null
-            delete @uniques[uniqueKey][oldVal]
-            @redis.HDEL "#{@uniqueKey}:#{uniqueKey}", oldVal, (err,res) ->
-              if err
-                throw err
-          @uniques[uniqueKey][newVal] = model
-          @redis.HSET "#{@uniqueKey}:#{uniqueKey}", newVal, model.id, (err,res) ->
-            if err
-              throw err
-
 
   checkUnique: (model,reason,cb) =>
     # Check no other records already have these values.
@@ -195,18 +168,15 @@ class RedisStore extends EventEmitter
         if err
           options.error err
         else
-          @index model, 'update'
           options.success model
     storeUnique = =>
       @storeUnique model, 'update', (err, res) =>
         if err
           options.error err
         else
+          storeModel()
           @clearOldUnique model, (err, res) ->
-            if err
-              options.error err
-            else
-              storeModel()
+            #TODO: Log errors
     @checkUnique model, 'update', (err, res) ->
       if err
         options.error err
@@ -226,7 +196,7 @@ class RedisStore extends EventEmitter
     if options.searchUnique
       uniqueKey = options.searchUnique.key
       value = "#{options.searchUnique.value}".toLowerCase()
-      @redis.HGET "#{@key}:#{uniqueKey}", value, (err, res) =>
+      @redis.GET "unique|#{@key}:#{uniqueKey}|#{value}", (err, res) =>
         if err
           options.error err
         else if res is null
@@ -260,6 +230,8 @@ class RedisStore extends EventEmitter
 
   ###
   This function injects our sync method into a different scope's Backbone
+
+  'infect' inspired by https://github.com/tpope/vim-pathogen
   ###
   @infect: (Backbone) ->
     _oldBackboneSync = Backbone.sync

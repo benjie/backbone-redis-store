@@ -16,7 +16,7 @@ class TestCollection extends Backbone.Collection
 
 
 randstr = (length) ->
-  chars = "abcdef"
+  chars = "ab"
   out = ""
   for i in [0...length]
     out += chars.substr(Math.random()*chars.length,1)
@@ -24,7 +24,7 @@ randstr = (length) ->
 
 
 testCollection = new TestCollection()
-testCollection.getByUnique 'username', 'bob',
+testCollection.getByUnique 'username', 'bab',
   success: (model) ->
     if model
       console.log "Got it: "
@@ -67,6 +67,7 @@ fetchAll = ->
         error: (model,err) ->
           console.log "ERROR: "
           console.dir err
+          console.dir model.toJSON()
           throw err
     error: (e) ->
       console.error e
