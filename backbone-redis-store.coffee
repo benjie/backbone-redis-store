@@ -60,25 +60,91 @@ class RedisStore extends EventEmitter
               throw err
 
 
-  checkUnique: (model,cb) =>
+  checkUnique: (model,reason,cb) =>
+    # Check no other records already have these values.
+    #
+    # This check isn't 100% necessary (we could leave it to SETNX)
+    # but it saves generating a new id if another record obviously
+    # already exists.
+    keys = []
+    ks = []
     if @unique.length
-      # Check no other records already have these values.
-      #
-      # This check isn't 100% necessary (we could leave it to SETNX)
-      # but it saves generating a new id if another record obviously
-      # already exists.
-      keys = []
+      prev = model.previousAttributes()
       for key in @unique
-        keys.push "unique|#{@key}:#{key}|#{model.attributes[key]}"
+        oldVal = ''
+        unless reason is 'create'
+          oldVal = "#{prev[key] or ''}".toLowerCase()
+        newVal = "#{model.attributes[key]}".toLowerCase()
+        if oldVal != newVal
+          ks.push key
+          keys.push "unique|#{@key}:#{key}|#{newVal}"
 
+    if keys.length
       @redis.MGET keys, (err, res) ->
         for key,i in keys
           if res[i] isnt null
             cb
               errorCode: 409
-              errorMessage: "Unique key conflict"
+              errorMessage: "Unique key conflict for key '#{ks[i]}'"
             return
         cb null
+        return
+    else
+      cb null
+    return
+
+  clearOldUnique: (model, cb) =>
+    keys = []
+    if @unique.length
+      prev = model.previousAttributes()
+      for key in @unique
+        oldVal = "#{prev[key]}".toLowerCase()
+        newVal = "#{model.attributes[key]}".toLowerCase()
+        if oldVal != newVal
+          keys.push "unique|#{@key}:#{key}|#{oldVal}"
+    if keys.length
+      @redis.DEL keys, (err, res) ->
+        if err
+          cb
+            errorCode: 500
+            errorMessage: "Couldn't delete old keys?"
+        else
+          cb null
+        return
+    cb null
+    return
+
+  storeUnique: (model, reason, cb) =>
+    # Because we're just using one redis connection, using WATCH in
+    # many places could cause us to fail frequently under high load
+    # due to watching a vast number of keys and only one needing to
+    # change to invalidate the transaction.
+    #
+    # Instead we will use MSETNX which will only set the keys if they
+    # don't already exist. An error from this implies that there is a
+    # conflict.
+    #
+    # TODO: Check error type to confirm conflict.
+    keys = []
+    if @unique.length
+      prev = model.previousAttributes()
+      for key in @unique
+        oldVal = ''
+        unless reason is 'create'
+          oldVal = "#{prev[key]}".toLowerCase()
+        newVal = "#{model.attributes[key]}".toLowerCase()
+        if oldVal != newVal
+          keys.push "unique|#{@key}:#{key}|#{newVal}"
+          keys.push model.id
+
+    if keys.length
+      @redis.MSETNX keys, (err,res) ->
+        if err
+          cb
+            errorCode: 409
+            errorMessage: "Unique key conflict"
+        else
+          cb null
         return
     else
       cb null
@@ -96,30 +162,11 @@ class RedisStore extends EventEmitter
         return
       return
     storeUnique = =>
-      keys = []
-      for key in @unique
-        keys.push "unique|#{@key}:#{key}|#{model.attributes[key]}"
-        keys.push model.id
-
-      # Because we're just using one redis connection, using WATCH in
-      # many places could cause us to fail frequently under high load
-      # due to watching a vast number of keys and only one needing to
-      # change to invalidate the transaction.
-      #
-      # Instead we will use MSETNX which will only set the keys if they
-      # don't already exist. An error from this implies that there is a
-      # conflict.
-      #
-      # TODO: Check error type to confirm conflict.
-      @redis.MSETNX keys, (err,res) ->
+      @storeUnique model, 'create', (err, res) ->
         if err
-          options.error
-            errorCode: 409
-            errorMessage: "Unique conflict"
+          options.error err
         else
           storeModel()
-        return
-      return
     checkId = =>
       unless model.id
         @generateId (err, id) =>
@@ -135,7 +182,7 @@ class RedisStore extends EventEmitter
       else
         storeUnique()
       return
-    @checkUnique model, (err,res) ->
+    @checkUnique model, 'create', (err,res) ->
       if err
         options.error err
       else
@@ -143,12 +190,28 @@ class RedisStore extends EventEmitter
     return
 
   update: (model, options) ->
-    @redis.HSET @key, "#{model.id}", JSON.stringify(model.toJSON()), (err, res) =>
+    storeModel = =>
+      @redis.HSET @key, "#{model.id}", JSON.stringify(model.toJSON()), (err, res) =>
+        if err
+          options.error err
+        else
+          @index model, 'update'
+          options.success model
+    storeUnique = =>
+      @storeUnique model, 'update', (err, res) =>
+        if err
+          options.error err
+        else
+          @clearOldUnique model, (err, res) ->
+            if err
+              options.error err
+            else
+              storeModel()
+    @checkUnique model, 'update', (err, res) ->
       if err
         options.error err
       else
-        @index model, 'update'
-        options.success model
+        storeUnique()
     return
 
   find: (model, options) ->
@@ -168,7 +231,6 @@ class RedisStore extends EventEmitter
           options.error err
         else if res is null
           options.success null
-          #console.log "#{@key}:#{uniqueKey}, #{value} is #{res}"
         else
           @redis.HGET "#{@key}", "#{res}", (err, res) ->
             if err
@@ -191,7 +253,8 @@ class RedisStore extends EventEmitter
       if err
         options.error err
       else
-        @index model, 'delete'
+        @clearOldUnique model, (err, res) ->
+          #TODO: LOG errors
         options.success model
     return
 
@@ -206,8 +269,6 @@ class RedisStore extends EventEmitter
         options.success store.uniques[uniqueKey][value]
       else
         success = (collection, resp) ->
-          #console.log "Response: #{resp.id}"
-          #console.dir resp
           if options.success
             options.success (if resp then collection.get(resp.id) else null)
         error = (err) ->
