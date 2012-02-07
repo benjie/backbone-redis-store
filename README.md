@@ -30,6 +30,7 @@ It is written in CoffeeScript, so you'll need CoffeeScript to run it.
 Features
 --------
 
+ * MIT license
  * Written in CoffeeScript
  * Overrides Backbone.sync to check for `redisStore` and take appropriate
    action (should revert back to old Backbone.sync if no `redisStore` is
