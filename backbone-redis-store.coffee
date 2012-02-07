@@ -59,25 +59,87 @@ class RedisStore extends EventEmitter
             if err
               throw err
 
+
+  checkUnique: (model,cb) =>
+    if @unique.length
+      # Check no other records already have these values.
+      #
+      # This check isn't 100% necessary (we could leave it to SETNX)
+      # but it saves generating a new id if another record obviously
+      # already exists.
+      keys = []
+      for key in @unique
+        keys.push "unique|#{@key}:#{key}|#{model.attributes[key]}"
+
+      @redis.MGET keys, (err, res) ->
+        for key,i in keys
+          if res[i] isnt null
+            cb
+              errorCode: 409
+              errorMessage: "Unique key conflict"
+            return
+        cb null
+        return
+    else
+      cb null
+    return
+
   create: (model, options) ->
-    next = =>
+    storeModel = =>
       @redis.HSETNX @key, model.id, JSON.stringify(model.toJSON()), (err, res) =>
         if err
-          options.error err
+          options.error
+            errorCode: 500
+            errorMessage: "Couldn't save model even after reserving id."
         else
-          @index model, 'create'
           options.success model
+        return
+      return
+    storeUnique = =>
+      keys = []
+      for key in @unique
+        keys.push "unique|#{@key}:#{key}|#{model.attributes[key]}"
+        keys.push model.id
 
-    unless model.id
-      @generateId (err, id) =>
+      # Because we're just using one redis connection, using WATCH in
+      # many places could cause us to fail frequently under high load
+      # due to watching a vast number of keys and only one needing to
+      # change to invalidate the transaction.
+      #
+      # Instead we will use MSETNX which will only set the keys if they
+      # don't already exist. An error from this implies that there is a
+      # conflict.
+      #
+      # TODO: Check error type to confirm conflict.
+      @redis.MSETNX keys, (err,res) ->
         if err
-          options.error "Couldn't generate id for new record."
+          options.error
+            errorCode: 409
+            errorMessage: "Unique conflict"
         else
-          model.id = id
-          model.set 'id', id
-          next()
-    else
-      next()
+          storeModel()
+        return
+      return
+    checkId = =>
+      unless model.id
+        @generateId (err, id) =>
+          if err
+            options.error
+              errorCode: 500
+              errorMessage: "Couldn't generate id for new record."
+          else
+            model.id = id
+            model.set 'id', id
+            storeUnique()
+          return
+      else
+        storeUnique()
+      return
+    @checkUnique model, (err,res) ->
+      if err
+        options.error err
+      else
+        checkId()
     return
 
   update: (model, options) ->
