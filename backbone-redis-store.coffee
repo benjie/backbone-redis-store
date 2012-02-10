@@ -235,7 +235,7 @@ class RedisStore extends EventEmitter
   @infect: (Backbone) ->
     _oldBackboneSync = Backbone.sync
     Backbone.Collection::getByUnique = (uniqueKey, value, options) ->
-      store = @redisStore
+      store = @redisStore || @model::redisStore
       if store.uniques[uniqueKey][value]
         options.success store.uniques[uniqueKey][value]
       else
@@ -255,7 +255,9 @@ class RedisStore extends EventEmitter
     Backbone.sync = (method, model, options) ->
       # See if we have a redisStore to use. If so, use it. Otherwise do
       # normal backbone stuff.
-      store = model.redisStore || model.collection.redisStore
+      #
+      # NOTE: model might actually be a collection
+      store = model.redisStore || model.collection?.redisStore || model.model?.prototype.redisStore
       unless store
         return _oldBackboneSync.call @, method, model, options
       else
