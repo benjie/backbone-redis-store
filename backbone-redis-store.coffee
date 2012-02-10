@@ -242,21 +242,25 @@ class RedisStore extends EventEmitter
     Backbone.Collection::getByUnique = (uniqueKey, value, options) ->
       store = @redisStore || @model::redisStore
       value = value.toLowerCase()
-      if store._byUnique[uniqueKey][value]
-        model = @get store._byUnique[uniqueKey][value]
-        if model
-          options.success model
-        else
-          console.error "Corrupted unique index - no model found for id '#{store._byUnique[uniqueKey][value]}'"
-          options.error @, {errorCode: 500, errorMessage: "Corrupted unique index"}
-      else
+      resolveFromCache = ->
+        if store._byUnique[uniqueKey][value]
+          model = @get store._byUnique[uniqueKey][value]
+          if model
+            options.success model
+          else
+            console.error "Corrupted unique index - no model found for id '#{store._byUnique[uniqueKey][value]}'"
+            options.error @, {errorCode: 500, errorMessage: "Corrupted unique index"}
+          return true
+        return false
+      unless resolveFromCache()
         success = (collection, resp) ->
           if resp.length == 1
             if options.success
               options.success collection.get(resp[0].id)
           else
-            if options.error
-              options.error collection, {errorCode: 404, errorMessage: "Not found"}
+            unless resolveFromCache()
+              if options.error
+                options.error collection, {errorCode: 404, errorMessage: "Not found"}
         error = (err) ->
           if options.error
             options.error err
