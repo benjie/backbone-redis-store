@@ -68,7 +68,8 @@ fetchAll = ->
           console.log "ERROR: "
           console.dir err
           console.dir model.toJSON()
-          throw err
+          console.dir err
+          process.exit 1
     error: (e) ->
       console.error e
       process.exit 1
