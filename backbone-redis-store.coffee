@@ -20,8 +20,8 @@ class RedisStore extends EventEmitter
     @key = options.key
     @redis = options.redisClient
     @unique = options.unique || []
-    @uniques = {}
-    @uniques[uniqueKey] = {} for uniqueKey in @unique
+    @_byUnique = {}
+    @_byUnique[uniqueKey] = {} for uniqueKey in @unique
     super
 
   ###
@@ -205,7 +205,12 @@ class RedisStore extends EventEmitter
             if err
               options.error err
             else
-              options.success JSON.parse res
+              m = JSON.parse res
+              if model.get m.id
+                console.warn "SKIPPED record #{m.id} because it's already in the collection"
+                options.success []
+              else
+                options.success [m]
     else
       @redis.HVALS @key, (err, res) =>
         if err
@@ -236,12 +241,22 @@ class RedisStore extends EventEmitter
     _oldBackboneSync = Backbone.sync
     Backbone.Collection::getByUnique = (uniqueKey, value, options) ->
       store = @redisStore || @model::redisStore
-      if store.uniques[uniqueKey][value]
-        options.success store.uniques[uniqueKey][value]
+      value = value.toLowerCase()
+      if store._byUnique[uniqueKey][value]
+        model = @get store._byUnique[uniqueKey][value]
+        if model
+          options.success model
+        else
+          console.error "Corrupted unique index - no model found for id '#{store._byUnique[uniqueKey][value]}'"
+          options.error @, {errorCode: 500, errorMessage: "Corrupted unique index"}
       else
         success = (collection, resp) ->
-          if options.success
-            options.success (if resp then collection.get(resp.id) else null)
+          if resp.length == 1
+            if options.success
+              options.success collection.get(resp[0].id)
+          else
+            if options.error
+              options.error collection, {errorCode: 404, errorMessage: "Not found"}
         error = (err) ->
           if options.error
             options.error err
