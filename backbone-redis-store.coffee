@@ -67,6 +67,7 @@ class RedisStore extends EventEmitter
 
   clearOldUnique: (model, cb) =>
     keys = []
+    ks = []
     if @unique.length
       prev = model.previousAttributes()
       for key in @unique
@@ -74,13 +75,16 @@ class RedisStore extends EventEmitter
         newVal = "#{model.attributes[key]}".toLowerCase()
         if oldVal != newVal
           keys.push "unique|#{@key}:#{key}|#{oldVal}"
+          ks.push key
     if keys.length
-      @redis.DEL keys, (err, res) ->
+      @redis.DEL keys, (err, res) =>
         if err
           cb
             errorCode: 500
             errorMessage: "Couldn't delete old keys?"
         else
+          for key in ks
+            delete @_byUnique[key]["#{prev[key]}".toLowerCase()]
           cb null
         return
     cb null
@@ -110,12 +114,14 @@ class RedisStore extends EventEmitter
           keys.push model.id
 
     if keys.length
-      @redis.MSETNX keys, (err,res) ->
+      @redis.MSETNX keys, (err,res) =>
         if err
           cb
             errorCode: 409
             errorMessage: "Unique key conflict"
         else
+          for key in @unique
+            @_byUnique[key]["#{model.attributes[key]}".toLowerCase()] = model.id
           cb null
         return
     else
@@ -188,7 +194,10 @@ class RedisStore extends EventEmitter
       if err
         options.error err
       else
-        options.success JSON.parse res
+        m = JSON.parse res
+        for key in @unique
+          @_byUnique[key]["#{m[key]}".toLowerCase()] = m.id
+        options.success m
     return
 
   findAll: (model, options)->
@@ -201,11 +210,13 @@ class RedisStore extends EventEmitter
         else if res is null
           options.success null
         else
-          @redis.HGET "#{@key}", "#{res}", (err, res) ->
+          @redis.HGET "#{@key}", "#{res}", (err, res) =>
             if err
               options.error err
             else
               m = JSON.parse res
+              for key in @unique
+                @_byUnique[key]["#{m[key]}".toLowerCase()] = m.id
               if model.get m.id
                 console.warn "SKIPPED record #{m.id} because it's already in the collection"
                 options.success []
@@ -218,7 +229,10 @@ class RedisStore extends EventEmitter
         else
           data = []
           for r in res
-            data.push JSON.parse r
+            m = JSON.parse r
+            for key in @unique
+              @_byUnique[key]["#{m[key]}".toLowerCase()] = m.id
+            data.push m
           options.success data
     return
 
@@ -242,7 +256,7 @@ class RedisStore extends EventEmitter
     Backbone.Collection::getByUnique = (uniqueKey, value, options) ->
       store = @redisStore || @model::redisStore
       value = value.toLowerCase()
-      resolveFromCache = ->
+      resolveFromCache = =>
         if store._byUnique[uniqueKey][value]
           model = @get store._byUnique[uniqueKey][value]
           if model
