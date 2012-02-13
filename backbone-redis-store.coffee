@@ -322,6 +322,12 @@ class RedisStore extends EventEmitter
           return
         else
           model = new @model {id: value}
+          success = options.success
+          options.success = (model) =>
+            if model and !@get(model.id)
+              @add model
+            if success
+              success(model)
           model.fetch options
         return
       store = @redisStore || @model::redisStore
