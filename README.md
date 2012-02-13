@@ -40,6 +40,7 @@ Features
  * Can enforce unique values for arbitrary keys (optional)
  * Indexing (currently only indexes unique keys)
  * Find model by unique key (asynchronously loads if not already loaded)
+ * Sets (e.g. foreign key lookups)
 
 Storage
 -------

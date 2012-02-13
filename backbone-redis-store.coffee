@@ -8,6 +8,7 @@ Inspired by:
 ###
 
 EventEmitter = require('events').EventEmitter
+async = require('async')
 
 ###
 Takes the following options:
@@ -130,12 +131,24 @@ class RedisStore extends EventEmitter
 
   create: (model, options) ->
     storeModel = =>
-      @redis.HSETNX @key, model.id, JSON.stringify(model.toJSON()), (err, res) =>
+      data = model.toJSON()
+      sets = {}
+      if model instanceof Backbone.RedisModel
+        sets = data.sets
+        delete data.sets
+      @redis.HSETNX @key, model.id, JSON.stringify(data), (err, res) =>
         if err
           options.error
             errorCode: 500
             errorMessage: "Couldn't save model even after reserving id."
         else
+          for k,v of sets
+            vals = []
+            for k2 of v
+              vals.push k2
+            if vals.length
+              @redisClient.SADD "#{@key}|set:#{k}|#{model.id}", vals
+              # TODO: Error handling, delay options.success, etc
           options.success model
         return
       return
@@ -169,10 +182,36 @@ class RedisStore extends EventEmitter
 
   update: (model, options) ->
     storeModel = =>
-      @redis.HSET @key, "#{model.id}", JSON.stringify(model.toJSON()), (err, res) =>
+      data = model.toJSON()
+      sets = {}
+      pSets = {}
+      if model instanceof Backbone.RedisModel
+        sets = data.sets
+        pSets = model.previous('sets')
+        delete data.sets
+      @redis.HSET @key, "#{model.id}", JSON.stringify(data), (err, res) =>
         if err
           options.error err
         else
+          for k,v of sets
+            vals = []
+            for k2 of v
+              vals.push k2
+            if vals.length
+              @redisClient.SADD "#{@key}|set:#{k}|#{model.id}", vals
+              # TODO: Error handling, delay options.success, etc
+          for k,v of pSets
+            if !sets[k]
+              @redisClient.DEL "#{@key}|set:#{k}|#{model.id}"
+              # TODO: Error handling, delay options.success, etc
+            else
+              vals = []
+              for k2 of v
+                if typeof sets[k][k2] is 'undefined'
+                  vals.push k2
+              if vals.length
+                @redisClient.SREM "#{@key}|set:#{k}|#{model.id}", vals
+                # TODO: Error handling, delay options.success, etc
           options.success model
     storeUnique = =>
       @storeUnique model, 'update', (err, res) =>
@@ -189,15 +228,42 @@ class RedisStore extends EventEmitter
         storeUnique()
     return
 
-  find: (model, options) ->
-    @redis.HGET @key, "#{model.id}", (err, res) =>
+  find: (model, options, multiId) ->
+    id = if multiId? then multiId else model.id
+    @redis.HGET @key, "#{id}", (err, res) =>
       if err
         options.error err
+      else if multiId? and res is null
+        console.error "ERROR: User '#{id}' has no record!"
+        options.success []
       else
         m = JSON.parse res
         for key in @unique
           @_byUnique[key]["#{m[key]}".toLowerCase()] = m.id
-        options.success m
+        if multiId? and model.get m.id
+          console.warn "SKIPPED record #{m.id} because it's already in the collection"
+          options.success []
+        else
+          sKeys = []
+          modl = model
+          if multiId?
+            modl = model.model
+          if modl instanceof Backbone.RedisModel
+            for k in modl.sets
+              sKeys.push k
+          fetchSet = (k, cb) =>
+            @redisClient.SMEMBERS "#{@key}|set:#{k}|#{m.id}", (err, res) ->
+              if !err
+                m.sets = {} unless m.sets
+                m.sets[k] = {} unless m.sets[k]
+                for v in res
+                  m.sets[k][v] = true
+                cb()
+          async.forEach sKeys, fetchSet, ->
+            if multiId?
+              options.success [m]
+            else
+              options.success m
     return
 
   findAll: (model, options)->
@@ -208,21 +274,12 @@ class RedisStore extends EventEmitter
         if err
           options.error err
         else if res is null
-          options.success null
+          options.success []
         else
-          @redis.HGET "#{@key}", "#{res}", (err, res) =>
-            if err
-              options.error err
-            else
-              m = JSON.parse res
-              for key in @unique
-                @_byUnique[key]["#{m[key]}".toLowerCase()] = m.id
-              if model.get m.id
-                console.warn "SKIPPED record #{m.id} because it's already in the collection"
-                options.success []
-              else
-                options.success [m]
+          @find model, options, res
     else
+      if Object.keys(model.model.sets).length
+        throw "ERROR: Don't support a full fetch of a model with sets"
       @redis.HVALS @key, (err, res) =>
         if err
           options.error err
@@ -241,6 +298,10 @@ class RedisStore extends EventEmitter
       if err
         options.error err
       else
+        if model instanceof Backbone.RedisModel
+          for k of model.sets
+            @redisClient.DEL "#{@key}|set:#{k}|#{model.id}"
+            # TODO: Error handling, delay options.success, etc
         @clearOldUnique model, (err, res) ->
           #TODO: LOG errors
         options.success model
@@ -262,6 +323,7 @@ class RedisStore extends EventEmitter
           if model
             options.success model
           else
+            console.trace()
             console.error "Corrupted unique index - no model found for id '#{store._byUnique[uniqueKey][value]}'"
             options.error @, {errorCode: 500, errorMessage: "Corrupted unique index"}
           return true
@@ -309,5 +371,42 @@ class RedisStore extends EventEmitter
 
         fn.call store, model, options
         return
+
+    class Backbone.RedisModel extends Backbone.Model
+      sets: {}
+
+      setAdd: (key, val) ->
+        unless @sets[key]
+          throw "ERROR: Set '#{key}' not defined"
+        sets = @get 'sets' || {}
+        sets[key] = {} unless sets[key]?
+        if typeof sets[key][val] is 'undefined'
+          sets[key][val] = true
+          @set 'sets', sets
+
+      setDelete: (key, val) ->
+        unless @sets[key]
+          throw "ERROR: Set '#{key}' not defined"
+        sets = @get 'sets' || {}
+        sets[key] = {} unless sets[key]?
+        if typeof sets[key][val] isnt 'undefined'
+          delete sets[key][val]
+          @set 'sets', sets
+
+      setContents: (key) ->
+        unless @sets[key]
+          throw "ERROR: Set '#{key}' not defined"
+        res = []
+        sets = @get 'sets' || {}
+        if sets[key]?
+          for k of sets[key]
+            res.push k
+        return res
+
+      setContains: (key, val) ->
+        unless @sets[key]
+          throw "ERROR: Set '#{key}' not defined"
+        sets = @get 'sets' || {}
+        return sets? && sets[key]? && @_sets[key][val]?
 
 module.exports = RedisStore
