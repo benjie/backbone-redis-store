@@ -147,7 +147,7 @@ class RedisStore extends EventEmitter
             for k2 of v
               vals.push k2
             if vals.length
-              @redisClient.SADD "#{@key}|set:#{k}|#{model.id}", vals
+              @redis.SADD "#{@key}|set:#{k}|#{model.id}", vals
               # TODO: Error handling, delay options.success, etc
           options.success model
         return
@@ -198,11 +198,11 @@ class RedisStore extends EventEmitter
             for k2 of v
               vals.push k2
             if vals.length
-              @redisClient.SADD "#{@key}|set:#{k}|#{model.id}", vals
+              @redis.SADD "#{@key}|set:#{k}|#{model.id}", vals
               # TODO: Error handling, delay options.success, etc
           for k,v of pSets
             if !sets[k]
-              @redisClient.DEL "#{@key}|set:#{k}|#{model.id}"
+              @redis.DEL "#{@key}|set:#{k}|#{model.id}"
               # TODO: Error handling, delay options.success, etc
             else
               vals = []
@@ -210,7 +210,7 @@ class RedisStore extends EventEmitter
                 if typeof sets[k][k2] is 'undefined'
                   vals.push k2
               if vals.length
-                @redisClient.SREM "#{@key}|set:#{k}|#{model.id}", vals
+                @redis.SREM "#{@key}|set:#{k}|#{model.id}", vals
                 # TODO: Error handling, delay options.success, etc
           options.success model
     storeUnique = =>
@@ -249,10 +249,10 @@ class RedisStore extends EventEmitter
           if multiId?
             modl = model.model
           if modl instanceof Backbone.RedisModel
-            for k in modl.sets
+            for k of modl.sets
               sKeys.push k
           fetchSet = (k, cb) =>
-            @redisClient.SMEMBERS "#{@key}|set:#{k}|#{m.id}", (err, res) ->
+            @redis.SMEMBERS "#{@key}|set:#{k}|#{m.id}", (err, res) ->
               if !err
                 m.sets = {} unless m.sets
                 m.sets[k] = {} unless m.sets[k]
@@ -300,7 +300,7 @@ class RedisStore extends EventEmitter
       else
         if model instanceof Backbone.RedisModel
           for k of model.sets
-            @redisClient.DEL "#{@key}|set:#{k}|#{model.id}"
+            @redis.DEL "#{@key}|set:#{k}|#{model.id}"
             # TODO: Error handling, delay options.success, etc
         @clearOldUnique model, (err, res) ->
           #TODO: LOG errors
@@ -378,7 +378,7 @@ class RedisStore extends EventEmitter
       setAdd: (key, val) ->
         unless @sets[key]
           throw "ERROR: Set '#{key}' not defined"
-        sets = @get 'sets' || {}
+        sets = @get('sets') || {}
         sets[key] = {} unless sets[key]?
         if typeof sets[key][val] is 'undefined'
           sets[key][val] = true
@@ -387,7 +387,7 @@ class RedisStore extends EventEmitter
       setDelete: (key, val) ->
         unless @sets[key]
           throw "ERROR: Set '#{key}' not defined"
-        sets = @get 'sets' || {}
+        sets = @get('sets') || {}
         sets[key] = {} unless sets[key]?
         if typeof sets[key][val] isnt 'undefined'
           delete sets[key][val]
@@ -397,7 +397,7 @@ class RedisStore extends EventEmitter
         unless @sets[key]
           throw "ERROR: Set '#{key}' not defined"
         res = []
-        sets = @get 'sets' || {}
+        sets = @get('sets') || {}
         if sets[key]?
           for k of sets[key]
             res.push k
@@ -406,7 +406,7 @@ class RedisStore extends EventEmitter
       setContains: (key, val) ->
         unless @sets[key]
           throw "ERROR: Set '#{key}' not defined"
-        sets = @get 'sets' || {}
+        sets = @get('sets') || {}
         return sets? && sets[key]? && @_sets[key][val]?
 
 module.exports = RedisStore
