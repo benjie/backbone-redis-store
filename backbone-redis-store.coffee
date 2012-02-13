@@ -315,6 +315,15 @@ class RedisStore extends EventEmitter
   @infect: (Backbone) ->
     _oldBackboneSync = Backbone.sync
     Backbone.Collection::getByUnique = (uniqueKey, value, options) ->
+      if uniqueKey is @model::idAttribute
+        model = @get value
+        if model
+          options.success model
+          return
+        else
+          model = new @model {id: value}
+          model.fetch options
+        return
       store = @redisStore || @model::redisStore
       value = value.toLowerCase()
       resolveFromCache = =>
