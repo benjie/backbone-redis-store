@@ -279,6 +279,8 @@ class RedisStore extends EventEmitter
           @find model, options, res
     else
       if Object.keys(model.model.sets).length
+        console.dir model
+        console.trace()
         throw "ERROR: Don't support a full fetch of a model with sets"
       @redis.HVALS @key, (err, res) =>
         if err
@@ -316,6 +318,10 @@ class RedisStore extends EventEmitter
     _oldBackboneSync = Backbone.sync
     Backbone.Collection::getByUnique = (uniqueKey, value, options) ->
       if uniqueKey is @model::idAttribute
+        unless value?
+          console.trace()
+          console.error "id lookup requires an id to be set!"
+          return
         model = @get value
         if model
           options.success model
