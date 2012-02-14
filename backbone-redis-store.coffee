@@ -233,9 +233,12 @@ class RedisStore extends EventEmitter
     @redis.HGET @key, "#{id}", (err, res) =>
       if err
         options.error err
-      else if multiId? and res is null
-        console.error "ERROR: User '#{id}' has no record!"
+      else if multiId? and !res?
+        console.error "ERROR: '#{id}' has no record!"
         options.success []
+      else if !res
+        console.error "ERROR: '#{id}' has no record(2)!"
+        options.error {errorCode:404,errorMessage:"Not found"}
       else
         m = JSON.parse res
         for key in @unique
@@ -346,6 +349,7 @@ class RedisStore extends EventEmitter
           else
             console.trace()
             console.error "Corrupted unique index - no model found for id '#{store._byUnique[uniqueKey][value]}'"
+            console.dir store
             options.error @, {errorCode: 500, errorMessage: "Corrupted unique index"}
           return true
         return false
@@ -428,6 +432,6 @@ class RedisStore extends EventEmitter
         unless @sets[key]
           throw "ERROR: Set '#{key}' not defined"
         sets = @get('sets') || {}
-        return sets? && sets[key]? && @_sets[key][val]?
+        return sets? && sets[key]? && sets[key][val]?
 
 module.exports = RedisStore
