@@ -408,6 +408,8 @@ class RedisStore extends EventEmitter
         if typeof sets[key][val] is 'undefined'
           sets[key][val] = true
           @set 'sets', sets
+          @trigger 'change', @, {}
+          @trigger "change:set:#{key}", @, val, {}
 
       setDelete: (key, val) ->
         unless @sets[key]
@@ -417,6 +419,8 @@ class RedisStore extends EventEmitter
         if typeof sets[key][val] isnt 'undefined'
           delete sets[key][val]
           @set 'sets', sets
+          @trigger 'change', @, {}
+          @trigger "change:set:#{key}", @, val, {}
 
       setContents: (key) ->
         unless @sets[key]
