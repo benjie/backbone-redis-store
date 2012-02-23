@@ -147,7 +147,10 @@ class RedisStore extends EventEmitter
             for k2 of v
               vals.push k2
             if vals.length
-              @redis.SADD "#{@key}|set:#{k}|#{model.id}", vals
+              for val in vals # Support older redis stores, pre 2.4
+                @redis.SADD "#{@key}|set:#{k}|#{model.id}", val, (err, res) ->
+                  console.error "ERROR: from redis:"
+                  console.dir err
               # TODO: Error handling, delay options.success, etc
           options.success model
         return
@@ -198,7 +201,10 @@ class RedisStore extends EventEmitter
             for k2 of v
               vals.push k2
             if vals.length
-              @redis.SADD "#{@key}|set:#{k}|#{model.id}", vals
+              for val in vals # Support older redis stores, pre 2.4
+                @redis.SADD "#{@key}|set:#{k}|#{model.id}", val, (err, res) ->
+                  console.error "ERROR: from redis:"
+                  console.dir err
               # TODO: Error handling, delay options.success, etc
           for k,v of pSets
             if !sets[k]
