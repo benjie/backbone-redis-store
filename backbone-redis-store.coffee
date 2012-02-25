@@ -66,7 +66,7 @@ class RedisStore extends EventEmitter
       cb null
     return
 
-  clearOldUnique: (model, cb) =>
+  clearOldUnique: (model, del=false, cb) =>
     keys = []
     ks = []
     if @unique.length
@@ -74,12 +74,14 @@ class RedisStore extends EventEmitter
       for key in @unique
         oldVal = "#{prev[key]}".toLowerCase()
         newVal = "#{model.attributes[key]}".toLowerCase()
-        if oldVal != newVal
+        if oldVal != newVal or del
           keys.push "unique|#{@key}:#{key}|#{oldVal}"
           ks.push key
     if keys.length
       @redis.DEL keys, (err, res) =>
         if err
+          console.error "backbone-redis-store: Failed to delete old unique keys"
+          console.dir err
           cb
             errorCode: 500
             errorMessage: "Couldn't delete old keys?"
@@ -88,7 +90,8 @@ class RedisStore extends EventEmitter
             delete @_byUnique[key]["#{prev[key]}".toLowerCase()]
           cb null
         return
-    cb null
+    else
+      cb null
     return
 
   storeUnique: (model, reason, cb) =>
@@ -225,7 +228,7 @@ class RedisStore extends EventEmitter
           options.error err
         else
           storeModel()
-          @clearOldUnique model, (err, res) ->
+          @clearOldUnique model, false, (err, res) ->
             #TODO: Log errors
     @checkUnique model, 'update', (err, res) ->
       if err
@@ -305,7 +308,7 @@ class RedisStore extends EventEmitter
     return
 
   destroy: (model, options) ->
-    @redis.HDEL @key, "#{model.id}", (err, res) ->
+    @redis.HDEL @key, "#{model.id}", (err, res) =>
       if err
         options.error err
       else
@@ -313,7 +316,7 @@ class RedisStore extends EventEmitter
           for k of model.sets
             @redis.DEL "#{@key}|set:#{k}|#{model.id}"
             # TODO: Error handling, delay options.success, etc
-        @clearOldUnique model, (err, res) ->
+        @clearOldUnique model, true, (err, res) ->
           #TODO: LOG errors
         options.success model
     return
