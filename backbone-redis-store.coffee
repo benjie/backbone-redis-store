@@ -273,6 +273,9 @@ class RedisStore extends EventEmitter
                 for v in res
                   m.sets[k][v] = true
                 cb()
+              else
+                console.error "Error fetching set '#{@key}|set:#{k}|#{m.id}'"
+                console.error err
           async.forEach sKeys, fetchSet, ->
             if multiId?
               options.success [m]
@@ -290,7 +293,15 @@ class RedisStore extends EventEmitter
         else if res is null
           options.success []
         else
-          @find model, options, res
+          id = res
+          spec = {}
+          spec[model.model::idAttribute] = id
+          modl = new model.model spec
+          modl.fetch
+            success: (model) ->
+              options.success [model]
+            error: (c, err) ->
+              options.error err
     else
       if Object.keys(model.model.sets).length
         console.dir model
