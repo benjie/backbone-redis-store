@@ -194,7 +194,7 @@ class RedisStore extends EventEmitter
       pSets = {}
       if model instanceof Backbone.RedisModel
         sets = data.sets
-        pSets = model.previous('sets')
+        pSets = model._previous_sets
         delete data.sets
       @redis.HSET @key, "#{model.id}", JSON.stringify(data), (err, res) =>
         if err
@@ -212,16 +212,22 @@ class RedisStore extends EventEmitter
                     console.dir err
               # TODO: Error handling, delay options.success, etc
           for k,v of pSets
-            if !sets[k]
-              @redis.DEL "#{@key}|set:#{k}|#{model.id}"
+            if !sets[k]?
+              @redis.DEL "#{@key}|set:#{k}|#{model.id}", (err, res) ->
+                if err?
+                  console.log "[BRS]: Couldn't delete set"
+                  console.err err
               # TODO: Error handling, delay options.success, etc
             else
               vals = []
               for k2 of v
-                if typeof sets[k][k2] is 'undefined'
+                unless sets[k][k2]?
                   vals.push k2
               if vals.length
-                @redis.SREM "#{@key}|set:#{k}|#{model.id}", vals
+                @redis.SREM "#{@key}|set:#{k}|#{model.id}", vals, (err, res) ->
+                  if err?
+                    console.log "[BRS]: Couldn't delete set"
+                    console.err err
                 # TODO: Error handling, delay options.success, etc
           options.success model
     storeUnique = =>
@@ -406,6 +412,11 @@ class RedisStore extends EventEmitter
       unless store
         return _oldBackboneSync.call @, method, model, options
       else
+        oldSuccess = options.success
+        options.success = ->
+          oldSuccess.apply @, arguments
+          if model instanceof Backbone.RedisModel
+            model._previous_sets = JSON.parse JSON.stringify model.attributes.sets ? {}
         fn = switch method
           when "read"
             if model.id
