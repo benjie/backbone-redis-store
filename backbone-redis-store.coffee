@@ -347,6 +347,17 @@ class RedisStore extends EventEmitter
   ###
   @infect: (Backbone) ->
     _oldBackboneSync = Backbone.sync
+    _oldBackboneAdd = Backbone.Collection::add
+    Backbone.Collection::add = (models, options) ->
+      models = if _.isArray(models) then models.slice() else [models]
+      if models.length
+        for i in [models.length-1..0]
+          unless model = models[i] = this._prepareModel(models[i], options)
+            throw new Error("Can't add an invalid model to a collection")
+          if @get(model.id)
+            console.error "[backbone-redis-store] Dropping duplicate model #{model.id} (#{@.constructor.name})"
+            models.splice i, 1
+      return _oldBackboneAdd.call @, models, options
     Backbone.Collection::getByUnique = (uniqueKey, value, options) ->
       store = @redisStore || @model::redisStore
       if uniqueKey is @model::idAttribute
