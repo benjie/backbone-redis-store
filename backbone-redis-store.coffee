@@ -383,6 +383,7 @@ class RedisStore extends EventEmitter
           return
         else
           model = new @model {id: value}
+          error = options.error
           success = options.success
           options.success = (model) =>
             eModel = @get(model.id)
@@ -390,8 +391,15 @@ class RedisStore extends EventEmitter
               @add model
             else
               model = eModel
-            if success
-              success(model)
+            if model
+              if success
+                success(model)
+            else
+              if error
+                error @, {errorCode:404,errorMessage:"Record not found"}
+          options.error = =>
+            if error
+              error @, {errorCode:500,errorMessage:"Unknown error"}
           model.fetch options
         return
       value = value.toLowerCase()
@@ -442,7 +450,7 @@ class RedisStore extends EventEmitter
             model._previous_sets = JSON.parse JSON.stringify model.attributes.sets ? {}
         fn = switch method
           when "read"
-            if model.id
+            if model.id?
               store.find
             else
               store.findAll
