@@ -9,6 +9,6 @@
   "repository": {"type": "git", "url": "git://github.com/BenjieGillam/backbone-redis-store.git"},
   "dependencies": {
     "coffee-script": ">=1.2.0",
-    "async": "~> 0.1.22"
+    "async": ">= 0.1.22"
   }
 }
