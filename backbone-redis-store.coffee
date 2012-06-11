@@ -7,6 +7,13 @@ Inspired by:
   https://github.com/jeromegn/Backbone.localStorage
 ###
 
+
+###
+TODO: When adding a unique key, give it a short TTL until the model is
+  successfully added, then remove the TTL (make it permanent) -> protects
+  against crashes between adding the unique key and saving the model.
+###
+
 EventEmitter = require('events').EventEmitter
 async = require('async')
 
@@ -141,7 +148,9 @@ class RedisStore extends EventEmitter
         delete data.sets
       @redis.HSETNX @key, model.id, JSON.stringify(data), (err, res) =>
         if err
-          options.error
+          console.error "[BRS]: Failed to save model '#{@key}:#{model.id}'!! ARGH!"
+          #TODO: Delete unique key
+          options.error model,
             errorCode: 500
             errorMessage: "Couldn't save model even after reserving id."
         else
@@ -162,14 +171,15 @@ class RedisStore extends EventEmitter
     storeUnique = =>
       @storeUnique model, 'create', (err, res) ->
         if err
-          options.error err
+          options.error model, err
         else
           storeModel()
     checkId = =>
       unless model.id
         @generateId (err, id) =>
+          console.log "Generated id: #{id}"
           if err
-            options.error
+            options.error model,
               errorCode: 500
               errorMessage: "Couldn't generate id for new record."
           else
@@ -180,9 +190,11 @@ class RedisStore extends EventEmitter
       else
         storeUnique()
       return
+    console.log "Checking uniqueness"
+    console.trace()
     @checkUnique model, 'create', (err,res) ->
       if err
-        options.error err
+        options.error model, err
       else
         checkId()
     return
@@ -198,7 +210,7 @@ class RedisStore extends EventEmitter
         delete data.sets
       @redis.HSET @key, "#{model.id}", JSON.stringify(data), (err, res) =>
         if err
-          options.error err
+          options.error model, {errorCode:500,errorMessage:"Could not store model",err:err}
         else
           for k,v of sets
             vals = []
@@ -233,14 +245,14 @@ class RedisStore extends EventEmitter
     storeUnique = =>
       @storeUnique model, 'update', (err, res) =>
         if err
-          options.error err
+          options.error model, err
         else
           storeModel()
           @clearOldUnique model, false, (err, res) ->
             #TODO: Log errors
     @checkUnique model, 'update', (err, res) ->
       if err
-        options.error err
+        options.error model, err
       else
         storeUnique()
     return
@@ -249,13 +261,13 @@ class RedisStore extends EventEmitter
     id = if multiId? then multiId else model.id
     @redis.HGET @key, "#{id}", (err, res) =>
       if err
-        options.error err
+        options.error model, {errorCode:500,errorMessage:"Fetch Failed"}
       else if multiId? and !res?
-        console.error "ERROR: '#{id}' has no record!"
+        console.error "ERROR: '#{@key}:#{id}' has no record!"
         options.success []
       else if !res
-        console.error "ERROR: '#{id}' has no record(2)!"
-        options.error {errorCode:404,errorMessage:"Not found"}
+        console.error "ERROR: '#{@key}:#{id}' has no record! (2)"
+        options.error model, {errorCode:404,errorMessage:"Not found"}
       else
         m = JSON.parse res
         for key in @unique
@@ -295,7 +307,7 @@ class RedisStore extends EventEmitter
       value = "#{options.searchUnique.value}".toLowerCase()
       @redis.GET "unique|#{@key}:#{uniqueKey}|#{value}", (err, res) =>
         if err
-          options.error err
+          options.error model, {errorCode:500, errorMessage:"Fetch failed"}
         else if res is null
           options.success []
         else
@@ -307,7 +319,7 @@ class RedisStore extends EventEmitter
             success: (model) ->
               options.success [model]
             error: (c, err) ->
-              options.error err
+              options.error model, err
     else
       if Object.keys(model.model.sets).length
         console.dir model
@@ -315,7 +327,7 @@ class RedisStore extends EventEmitter
         throw "ERROR: Don't support a full fetch of a model with sets"
       @redis.HVALS @key, (err, res) =>
         if err
-          options.error err
+          options.error model, {errorCode:500, errorMessage:"Fetch failed"}
         else
           data = []
           for r in res
@@ -329,7 +341,7 @@ class RedisStore extends EventEmitter
   destroy: (model, options) ->
     @redis.HDEL @key, "#{model.id}", (err, res) =>
       if err
-        options.error err
+        options.error model, {errorCode:500, errorMessage:"Delete failed"}
       else
         if model instanceof Backbone.RedisModel
           for k of model.sets
@@ -390,7 +402,7 @@ class RedisStore extends EventEmitter
             options.success model
           else
             console.trace()
-            console.error "Corrupted unique index - no model found for id '#{store._byUnique[uniqueKey][value]}'"
+            console.error "Corrupted unique index - no model found for id #{store.key}:'#{store._byUnique[uniqueKey][value]}'"
             console.dir store
             options.error @, {errorCode: 500, errorMessage: "Corrupted unique index"}
           return true
@@ -404,9 +416,9 @@ class RedisStore extends EventEmitter
             unless resolveFromCache()
               if options.error
                 options.error collection, {errorCode: 404, errorMessage: "Not found"}
-        error = (err) ->
+        error = (c, err) =>
           if options.error
-            options.error err
+            options.error @, err
         @fetch
           searchUnique:
             key: uniqueKey
@@ -447,7 +459,7 @@ class RedisStore extends EventEmitter
     class Backbone.RedisModel extends Backbone.Model
       sets: {}
 
-      setAdd: (key, val) ->
+      setAdd: (key, val, options = {}) ->
         unless @sets[key]
           throw "ERROR: Set '#{key}' not defined"
         sets = @get('sets') || {}
@@ -457,7 +469,8 @@ class RedisStore extends EventEmitter
           @set 'sets', sets
           @trigger 'change', @, {}
           @trigger "change:set:#{key}", @, val, {}
-          @save()
+          unless options.noSave?
+            @save()
 
       setDelete: (key, val) ->
         unless @sets[key]
