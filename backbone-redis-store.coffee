@@ -279,7 +279,7 @@ class RedisStore extends EventEmitter
           sKeys = []
           modl = model
           if multiId?
-            modl = model.model
+            modl = model.model.prototype
           if modl instanceof Backbone.RedisModel
             for k of modl.sets
               sKeys.push k
