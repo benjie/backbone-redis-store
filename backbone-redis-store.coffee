@@ -294,6 +294,7 @@ class RedisStore extends EventEmitter
               else
                 console.error "Error fetching set '#{@key}|set:#{k}|#{m.id}'"
                 console.error err
+                cb()
           async.forEach sKeys, fetchSet, ->
             if multiId?
               options.success [m]
@@ -321,22 +322,37 @@ class RedisStore extends EventEmitter
             error: (c, err) ->
               options.error model, err
     else
-      if model.model.sets?
-        if Object.keys(model.model.sets).length
-          console.dir model
-          console.trace()
-          throw "ERROR: Don't support a full fetch of a model with sets"
-      @redis.HVALS @key, (err, res) =>
+      @redis.HKEYS @key, (err, res) =>
         if err
           options.error model, {errorCode:500, errorMessage:"Fetch failed"}
         else
-          data = []
-          for r in res
-            m = JSON.parse r
-            for key in @unique
-              @_byUnique[key]["#{m[key]}".toLowerCase()] = m.id
-            data.push m
-          options.success data
+          res = _.map res, (a) -> parseInt a, 10
+          tasks = 1
+          models = []
+          checkComplete = ->
+            if tasks is 0
+              if !models?
+                options.error model, {errorCode: 500, errorMessage:"A fetch failed"}
+              else
+                options.success models
+          for id in res
+            do (id) =>
+              tasks++
+              opts =
+                success: (modl) ->
+                  if _.isArray modl
+                    models.push modl[0]
+                  else
+                    models.push modl
+                  tasks--
+                  checkComplete()
+                error: (model, err) ->
+                  models = null
+                  tasks--
+                  checkComplete()
+              @find model, opts, id
+          tasks--
+          checkComplete()
     return
 
   destroy: (model, options) ->
