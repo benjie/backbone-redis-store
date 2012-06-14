@@ -321,10 +321,11 @@ class RedisStore extends EventEmitter
             error: (c, err) ->
               options.error model, err
     else
-      if Object.keys(model.model.sets).length
-        console.dir model
-        console.trace()
-        throw "ERROR: Don't support a full fetch of a model with sets"
+      if model.model.sets?
+        if Object.keys(model.model.sets).length
+          console.dir model
+          console.trace()
+          throw "ERROR: Don't support a full fetch of a model with sets"
       @redis.HVALS @key, (err, res) =>
         if err
           options.error model, {errorCode:500, errorMessage:"Fetch failed"}
