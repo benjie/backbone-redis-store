@@ -1,12 +1,12 @@
 { "name": "backbone-redis-store",
-  "version": "0.1.0-alpha",
+  "version": "0.1.0",
   "description": "Backbone mod to enable Redis as store",
   "keywords": ["backbone","backbone.js","redis","store","kvs"],
-  "homepage": "https://github.com/BenjieGillam/backbone-redis-store",
-  "bugs": {"url": "https://github.com/BenjieGillam/backbone-redis-store/issues"},
+  "homepage": "https://github.com/benjie/backbone-redis-store",
+  "bugs": {"url": "https://github.com/benjie/backbone-redis-store/issues"},
   "author": "Benjie Gillam <benjie@jemjie.com> http://www.benjiegillam.com/",
   "main": "backbone-redis-store.coffee",
-  "repository": {"type": "git", "url": "git://github.com/BenjieGillam/backbone-redis-store.git"},
+  "repository": {"type": "git", "url": "git://github.com/benjie/backbone-redis-store.git"},
   "dependencies": {
     "coffee-script": ">=1.2.0",
     "async": ">= 0.1.22"
